@@ -64,7 +64,7 @@ def brute_force_pdf(pdf_path: str, wordlist: str, output_file: str = None) -> st
         print(Fore.YELLOW + f"[+] Resuming from line {start_line + 1} in the wordlist.")
 
     with open(wordlist, 'r') as words:
-        total_words = len(words.readlines())
+        total_words = sum(1 for _ in open(wordlist, 'r'))
         words.seek(0)
         
         # Skip to the last attempted password if resuming
@@ -115,7 +115,7 @@ def generate_report(pdf_path, wordlist, success, password, start_time, end_time,
     memory_info = process.memory_info()
 
     report_content = f"""
-Brute-force Report
+./Shad0wCrack Report
 ===================
 PDF File: {pdf_path}
 Wordlist: {wordlist}
