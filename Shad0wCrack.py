@@ -45,7 +45,6 @@ def check_pdf_password(pdf_path: str, password: str) -> bool:
         print(f"An unexpected error occurred: {e}")
         return False
 
-
 def brute_force_pdf(pdf_path: str, wordlist: str, output_file: str = None, auto_open: bool = False) -> str:
    
     start_time = time.time()
@@ -222,11 +221,8 @@ def crack_hash(hash_str: str, wordlist: str, output_file: str = None) -> str:
     print(Fore.RED + "[!] Failed to crack the hash.")
     return ""
 
-
 def determine_hash_type(hash_str: str) -> str:
-    """
-    Determine the hash type based on the length of the hash string.
-    """
+   
     hash_length_to_type = {
         32: 'md5',                             # 32 characters
         40: 'sha1',                            # 40 characters
@@ -243,7 +239,6 @@ def determine_hash_type(hash_str: str) -> str:
 if __name__ == "__main__":
     display_message()  # Display the custom message
 
-    # Setup command-line argument parsing
     parser = argparse.ArgumentParser(description="Brute-force a password-protected PDF file.")
     parser.add_argument("-f", "--file", type=str, required=False, help="Path to the PDF file.")
     parser.add_argument("-p", "--password-list", type=str, required=False, help="Path to the wordlist file.")
@@ -257,7 +252,6 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    # Use the command-line arguments for the file paths
     pdf_path = args.file
     wordlist = args.password_list
     output_file = args.output
