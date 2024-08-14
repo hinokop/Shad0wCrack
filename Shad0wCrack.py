@@ -35,10 +35,7 @@ def display_message():
     """ + Style.RESET_ALL)
 
 def check_pdf_password(pdf_path: str, password: str) -> bool:
-    """
-    Attempt to open a PDF file with the provided password using pikepdf.
-    Returns True if the password is correct, False otherwise.
-    """
+   
     try:
         with pikepdf.open(pdf_path, password=password):
             return True
@@ -49,17 +46,8 @@ def check_pdf_password(pdf_path: str, password: str) -> bool:
         return False
 
 
-# Improved memory usage in brute-force function
-
 def brute_force_pdf(pdf_path: str, wordlist: str, output_file: str = None, auto_open: bool = False) -> str:
-    """
-    Brute-force the password of a PDF file using a wordlist.
-    Returns the correct password if found, otherwise returns an empty string.
-    Saves progress to resume later if interrupted.
-    Generates an advanced report after completion.
-    Optionally writes the report to a specified file.
-    Optionally opens the PDF file automatically if the password is found.
-    """
+   
     start_time = time.time()
     process = psutil.Process(os.getpid())
 
@@ -120,20 +108,17 @@ def brute_force_pdf(pdf_path: str, wordlist: str, output_file: str = None, auto_
     return ""
 
 def open_pdf(pdf_path: str, password: str):
-    """
-    Open the PDF file with the found password using the default PDF viewer.
-    This will create a temporary, unprotected version of the PDF for viewing.
-    """
+
     try:
-        # Create a temporary file for the unprotected PDF
+        # Bypass PDF-Viewer Security by creating a TempFile ;)
         with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as temp_pdf:
             temp_pdf_path = temp_pdf.name
 
-            # Remove the password protection by copying to a new PDF
+            # Removing the PW by creating a new PDF without one.
             with pikepdf.open(pdf_path, password=password) as pdf:
                 pdf.save(temp_pdf_path)
 
-        # Open the unprotected PDF with the default viewer
+        # Open the bypassed PDF on any Sys
         if sys.platform == "win32":
             subprocess.run(["start", "", temp_pdf_path], shell=True)
         elif sys.platform == "darwin":
@@ -141,17 +126,15 @@ def open_pdf(pdf_path: str, password: str):
         else:  # Assume Linux or other Unix-like OS
             subprocess.run(["xdg-open", temp_pdf_path])
 
-        # Optionally delete the temporary file after a delay
-        time.sleep(2)  # Allow some time for the file to open
+        # (optional) delete or save tmp file
+        time.sleep(2)  
         os.remove(temp_pdf_path)
 
     except Exception as e:
         print(Fore.RED + f"Failed to open the PDF file: {e}" + Style.RESET_ALL)
 
 def generate_report(pdf_path, wordlist, success, password, start_time, end_time, total_attempts, process):
-    """
-    Generates a report summarizing the brute-force attempt.
-    """
+   
     time_taken = end_time - start_time
     words_per_second = total_attempts / time_taken
     memory_info = process.memory_info()
@@ -178,15 +161,11 @@ Password Found: {success}
     return report_content
 
 def print_report(report_content):
-    """
-    Prints the report content to the terminal.
-    """
+   
     print(Fore.CYAN + report_content)
 
 def save_report_to_file(report_content, output_file):
-    """
-    Saves the report content to the specified file.
-    """
+   
     with open(output_file, 'w') as report_file:
         report_file.write(report_content)
     print(Fore.CYAN + f"\n[+] Report saved to file: {output_file}")
@@ -215,21 +194,29 @@ def crack_hash(hash_str: str, wordlist: str, output_file: str = None) -> str:
     if not hash_type:
         print(Fore.RED + "[!] Unsupported or unrecognized hash type.")
         return ""
+
+    start_time = time.time()    
     
     with open(wordlist, 'r') as words:
         for password in tqdm(words, unit="word", ncols=100, colour="green", leave=False):
             password = password.strip()
             hashed_password = getattr(hashlib, hash_type)(password.encode()).hexdigest()
             if hashed_password == hash_str:
-                sys.stdout.flush()  # Ensure all progress bar output is flushed
+                end_time = time.time()
+                time_taken = end_time - start_time 
+                sys.stdout.flush()  # flushout progress bar for clarity
                 print(Fore.GREEN + Style.BRIGHT + f"\n[+] Hash cracked! Password: {password}")
                 print(Fore.CYAN + f"Hash: {hash_str}")
                 print(Fore.CYAN + f"Hash Type: {hash_type}")
                 print(Fore.CYAN + f"Password: {password}" + Style.RESET_ALL)
+                print(Fore.CYAN + f"Time Taken: {time_taken:.2f} seconds")
 
                 if output_file:
                     with open(output_file, 'w') as report_file:
-                        report_file.write(f"Hash: {hash_str}\nPassword: {password}\n")
+                        report_file.write(f"Hash: {hash_str}\n")
+                        report_file.write(f"Password: {password}\n")
+                        report_file.write(f"Hash Type: {hash_type}\n")
+                        report_file.write(f"Time Taken: {time_taken:.2f} seconds\n")
                 return password
 
     print(Fore.RED + "[!] Failed to crack the hash.")
@@ -247,21 +234,9 @@ def determine_hash_type(hash_str: str) -> str:
         64: 'sha256',                          # 64 characters
         96: 'sha384',                          # 96 characters
         128: 'sha512',                         # 128 characters
-        128: 'sha3-512',                       # 128 characters
-        40: 'ripemd160',                       # 40 characters
         80: 'ripemd320',                       # 80 characters
-        128: 'whirlpool',                      # 128 characters
         48: 'tiger192,3',                      # 48 characters
-        48: 'tiger192,4',                      # 48 characters
         8: 'crc8',                             # 8 characters
-        48: 'blake2s',                         # 48 characters
-        128: 'gost',                           # 128 characters
-        96: 'gost-crypto',                     # 96 characters
-        128: 'haval-512',                      # 128 characters
-        40: 'has160',                          # 40 characters
-        96: 'blake3',                          # 96 characters
-        128: 'skein1024',                      # 128 characters
-        48: 'fnv-1a',                          # 48 characters
     }
     return hash_length_to_type.get(len(hash_str), None)
 
