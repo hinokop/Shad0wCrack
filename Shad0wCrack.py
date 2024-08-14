@@ -1,3 +1,15 @@
+import os
+import sys
+import time
+
+def ensure_optimized_mode():
+    if not sys.flags.optimize:
+        print("You forgot the -O flag. Shad0wCrack is now restarting your Script with the -O flag")
+        time.sleep(2)  # Wait for 2 seconds to display the message
+        os.execv(sys.executable, [sys.executable, "-O"] + sys.argv)
+
+ensure_optimized_mode()
+
 import pikepdf
 from tqdm import tqdm
 import argparse
@@ -6,6 +18,9 @@ import os
 import sys
 import time
 import psutil
+import subprocess
+import hashlib
+import tempfile 
 
 # Initialize colorama
 init(autoreset=True)
@@ -36,27 +51,26 @@ def check_pdf_password(pdf_path: str, password: str) -> bool:
         print(f"An unexpected error occurred: {e}")
         return False
 
-def brute_force_pdf(pdf_path: str, wordlist: str, output_file: str = None) -> str:
+
+# Improved memory usage in brute-force function
+
+def brute_force_pdf(pdf_path: str, wordlist: str, output_file: str = None, auto_open: bool = False) -> str:
     """
     Brute-force the password of a PDF file using a wordlist.
     Returns the correct password if found, otherwise returns an empty string.
     Saves progress to resume later if interrupted.
     Generates an advanced report after completion.
     Optionally writes the report to a specified file.
+    Optionally opens the PDF file automatically if the password is found.
     """
-    # Initialize start time and process
     start_time = time.time()
     process = psutil.Process(os.getpid())
 
-    # Check if wordlist file exists and is not empty
     if not os.path.isfile(wordlist) or os.path.getsize(wordlist) == 0:
         print(Fore.RED + "[!] Wordlist file is missing or empty.")
         return ""
 
-    # Determine the progress file name based on the PDF file name
     progress_file = f"{os.path.basename(pdf_path)}.progress"
-
-    # Check if there is a saved progress file to resume from
     start_line = 0
     if os.path.exists(progress_file):
         with open(progress_file, 'r') as f:
@@ -64,15 +78,16 @@ def brute_force_pdf(pdf_path: str, wordlist: str, output_file: str = None) -> st
         print(Fore.YELLOW + f"[+] Resuming from line {start_line + 1} in the wordlist.")
 
     with open(wordlist, 'r') as words:
-        total_words = sum(1 for _ in open(wordlist, 'r'))
+        total_words = sum(1 for _ in words)
         words.seek(0)
         
-        # Skip to the last attempted password if resuming
         for _ in range(start_line):
             words.readline()
 
+        save_interval = min(1000, total_words // 10)
+
         for index, password in enumerate(tqdm(words, total=total_words, initial=start_line, unit="word", ncols=100, colour="green")):
-            password = password.strip()
+            password = password.strip('\n\r')
             if check_pdf_password(pdf_path, password):
                 end_time = time.time()
                 total_attempts = index + 1 + start_line
@@ -84,13 +99,14 @@ def brute_force_pdf(pdf_path: str, wordlist: str, output_file: str = None) -> st
                 if output_file:
                     save_report_to_file(report_content, output_file)
                 
-                # Remove progress file upon success
+                if auto_open:
+                    open_pdf(pdf_path, password)
+
                 if os.path.exists(progress_file):
                     os.remove(progress_file)
                 return password
 
-            # Save progress every 1000 attempts to reduce I/O overhead
-            if (index + start_line) % 1000 == 0:
+            if (index + start_line) % save_interval == 0:
                 with open(progress_file, 'w') as f:
                     f.write(str(index + start_line))
 
@@ -105,6 +121,35 @@ def brute_force_pdf(pdf_path: str, wordlist: str, output_file: str = None) -> st
         save_report_to_file(report_content, output_file)
     
     return ""
+
+def open_pdf(pdf_path: str, password: str):
+    """
+    Open the PDF file with the found password using the default PDF viewer.
+    This will create a temporary, unprotected version of the PDF for viewing.
+    """
+    try:
+        # Create a temporary file for the unprotected PDF
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as temp_pdf:
+            temp_pdf_path = temp_pdf.name
+
+            # Remove the password protection by copying to a new PDF
+            with pikepdf.open(pdf_path, password=password) as pdf:
+                pdf.save(temp_pdf_path)
+
+        # Open the unprotected PDF with the default viewer
+        if sys.platform == "win32":
+            subprocess.run(["start", "", temp_pdf_path], shell=True)
+        elif sys.platform == "darwin":
+            subprocess.run(["open", temp_pdf_path])
+        else:  # Assume Linux or other Unix-like OS
+            subprocess.run(["xdg-open", temp_pdf_path])
+
+        # Optionally delete the temporary file after a delay
+        time.sleep(2)  # Allow some time for the file to open
+        os.remove(temp_pdf_path)
+
+    except Exception as e:
+        print(Fore.RED + f"Failed to open the PDF file: {e}" + Style.RESET_ALL)
 
 def generate_report(pdf_path, wordlist, success, password, start_time, end_time, total_attempts, process):
     """
@@ -150,19 +195,78 @@ def save_report_to_file(report_content, output_file):
     print(Fore.CYAN + f"\n[+] Report saved to file: {output_file}")
 
 def show_help():
-    help_text = """
-Usage: python script_name.py -f <path_to_pdf> -p <path_to_wordlist> [-O <output_file>]
+    help_text = f"""
+Usage: python {os.path.basename(__file__)} -f <path_to_pdf> -p <path_to_wordlist> [-O <output_file>]
 
 Options:
   -f, --file           Path to the PDF file.
   -p, --password-list  Path to the wordlist file.
   -O, --output         (Optional) Save the report to the specified file.
+  --hash="hash here"   Hash Cracking Module
 
 Example:
   python script_name.py -f protected.pdf -p wordlist.txt
   python script_name.py -f protected.pdf -p wordlist.txt -O output.txt
+  python script_name.py --hash="" -p wordlist.txt -O output.txt
 """
     print(Fore.YELLOW + help_text + Style.RESET_ALL)
+
+import hashlib
+
+def crack_hash(hash_str: str, wordlist: str, output_file: str = None) -> str:
+    hash_type = determine_hash_type(hash_str)
+    if not hash_type:
+        print(Fore.RED + "[!] Unsupported or unrecognized hash type.")
+        return ""
+    
+    with open(wordlist, 'r') as words:
+        for password in tqdm(words, unit="word", ncols=100, colour="green", leave=False):
+            password = password.strip()
+            hashed_password = getattr(hashlib, hash_type)(password.encode()).hexdigest()
+            if hashed_password == hash_str:
+                sys.stdout.flush()  # Ensure all progress bar output is flushed
+                print(Fore.GREEN + Style.BRIGHT + f"\n[+] Hash cracked! Password: {password}")
+                print(Fore.CYAN + f"Hash: {hash_str}")
+                print(Fore.CYAN + f"Hash Type: {hash_type}")
+                print(Fore.CYAN + f"Password: {password}" + Style.RESET_ALL)
+
+                if output_file:
+                    with open(output_file, 'w') as report_file:
+                        report_file.write(f"Hash: {hash_str}\nPassword: {password}\n")
+                return password
+
+    print(Fore.RED + "[!] Failed to crack the hash.")
+    return ""
+
+
+def determine_hash_type(hash_str: str) -> str:
+    """
+    Determine the hash type based on the length of the hash string.
+    """
+    hash_length_to_type = {
+        32: 'md5',                             # 32 characters
+        40: 'sha1',                            # 40 characters
+        56: 'sha224',                          # 56 characters
+        64: 'sha256',                          # 64 characters
+        96: 'sha384',                          # 96 characters
+        128: 'sha512',                         # 128 characters
+        128: 'sha3-512',                       # 128 characters
+        40: 'ripemd160',                       # 40 characters
+        80: 'ripemd320',                       # 80 characters
+        128: 'whirlpool',                      # 128 characters
+        48: 'tiger192,3',                      # 48 characters
+        48: 'tiger192,4',                      # 48 characters
+        8: 'crc8',                             # 8 characters
+        48: 'blake2s',                         # 48 characters
+        128: 'gost',                           # 128 characters
+        96: 'gost-crypto',                     # 96 characters
+        128: 'haval-512',                      # 128 characters
+        40: 'has160',                          # 40 characters
+        96: 'blake3',                          # 96 characters
+        128: 'skein1024',                      # 128 characters
+        48: 'fnv-1a',                          # 48 characters
+    }
+    return hash_length_to_type.get(len(hash_str), None)
 
 if __name__ == "__main__":
     display_message()  # Display the custom message
@@ -172,6 +276,8 @@ if __name__ == "__main__":
     parser.add_argument("-f", "--file", type=str, required=False, help="Path to the PDF file.")
     parser.add_argument("-p", "--password-list", type=str, required=False, help="Path to the wordlist file.")
     parser.add_argument("-O", "--output", type=str, help="Save the report to the specified file.")
+    parser.add_argument("--hash", type=str, help="Hash to be cracked.")
+    parser.add_argument("-a", "--auto-open", action="store_true", help="Automatically open the PDF if the password is found.")
 
     if len(sys.argv) == 1:
         show_help()
@@ -183,8 +289,11 @@ if __name__ == "__main__":
     pdf_path = args.file
     wordlist = args.password_list
     output_file = args.output
+    auto_open = args.auto_open
 
-    if pdf_path and wordlist:
-        brute_force_pdf(pdf_path, wordlist, output_file)
+    if args.hash:
+        crack_hash(args.hash, wordlist, output_file)
+    elif pdf_path and wordlist:
+        brute_force_pdf(pdf_path, wordlist, output_file, auto_open)
     else:
         show_help()
