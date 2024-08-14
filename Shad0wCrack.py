@@ -17,7 +17,8 @@ from colorama import Fore, Style, init
 import psutil
 import subprocess
 import hashlib
-import tempfile 
+import tempfile
+import gzip
 
 # Initialize colorama
 init(autoreset=True)
@@ -34,6 +35,12 @@ def display_message():
                 Developed by ./Shad0w
     """ + Style.RESET_ALL)
 
+def open_wordlist(wordlist):
+    if wordlist.endswith('.gz'):
+        return gzip.open(wordlist, 'rt', encoding='utf-8', errors='ignore')
+    else:
+        return open(wordlist, 'r', encoding='utf-8', errors='ignore')
+
 def check_pdf_password(pdf_path: str, password: str) -> bool:
    
     try:
@@ -46,31 +53,30 @@ def check_pdf_password(pdf_path: str, password: str) -> bool:
         return False
 
 def brute_force_pdf(pdf_path: str, wordlist: str, output_file: str = None, auto_open: bool = False) -> str:
-   
     start_time = time.time()
     process = psutil.Process(os.getpid())
 
-    if not os.path.isfile(wordlist) or os.path.getsize(wordlist) == 0:
-        print(Fore.RED + "[!] Wordlist file is missing or empty.")
-        return ""
+    with open_wordlist(wordlist) as words:
+        if sum(1 for _ in words) == 0:
+            print(Fore.RED + "[!] Wordlist file is missing or empty.")
+            return ""
 
-    progress_file = f"{os.path.basename(pdf_path)}.progress"
-    start_line = 0
-    if os.path.exists(progress_file):
-        with open(progress_file, 'r') as f:
-            start_line = int(f.read().strip())
-        print(Fore.YELLOW + f"[+] Resuming from line {start_line + 1} in the wordlist.")
+        words.seek(0)
+        progress_file = f"{os.path.basename(pdf_path)}.progress"
+        start_line = 0
+        if os.path.exists(progress_file):
+            with open(progress_file, 'r') as f:
+                start_line = int(f.read().strip())
+            print(Fore.YELLOW + f"[+] Resuming from line {start_line + 1} in the wordlist.")
 
-    with open(wordlist, 'r') as words:
         total_words = sum(1 for _ in words)
         words.seek(0)
-        
         for _ in range(start_line):
             words.readline()
 
         save_interval = min(1000, total_words // 10)
 
-        for index, password in enumerate(tqdm(words, total=total_words, initial=start_line, unit="word", ncols=100, colour="green")):
+        for index, password in enumerate(tqdm(words, total=total_words, initial=start_line, unit="word", ncols=100, colour="green", leave=False, mininterval=0.5)):
             password = password.strip('\n\r')
             if check_pdf_password(pdf_path, password):
                 end_time = time.time()
@@ -195,9 +201,9 @@ def crack_hash(hash_str: str, wordlist: str, output_file: str = None) -> str:
         return ""
 
     start_time = time.time()    
-    
-    with open(wordlist, 'r') as words:
-        for password in tqdm(words, unit="word", ncols=100, colour="green", leave=False):
+
+    with open_wordlist(wordlist) as words:
+        for password in tqdm(words, unit="word", ncols=100, colour="green", leave=False, mininterval=0.5):
             password = password.strip()
             hashed_password = getattr(hashlib, hash_type)(password.encode()).hexdigest()
             if hashed_password == hash_str:
