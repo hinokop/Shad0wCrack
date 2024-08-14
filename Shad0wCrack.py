@@ -243,7 +243,7 @@ def determine_hash_type(hash_str: str) -> str:
     return hash_length_to_type.get(len(hash_str), None)
 
 if __name__ == "__main__":
-    display_message()  # Display the custom message
+    display_message() 
 
     parser = argparse.ArgumentParser(description="Brute-force a password-protected PDF file.")
     parser.add_argument("-f", "--file", type=str, required=False, help="Path to the PDF file.")
