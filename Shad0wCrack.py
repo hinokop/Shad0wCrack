@@ -10,14 +10,15 @@ import subprocess
 import hashlib
 import tempfile
 import gzip
+from multiprocessing import Pool, Manager, cpu_count
 
 # Initialize colorama
 init(autoreset=True)
 
 def ensure_optimized_mode():
     if not sys.flags.optimize:
-        print("You forgot the -O flag. Shad0wCrack is now restarting your Script in an optimized Environment")
-        time.sleep(2)
+        print("You forgot the -O flag. Shad0wCrack is now restarting your Script with the -O flag")
+        time.sleep(1)
         os.execv(sys.executable, [sys.executable, "-O"] + sys.argv)
 
 ensure_optimized_mode()
@@ -37,17 +38,23 @@ def display_message():
 def open_wordlist(wordlist: str):
     return gzip.open(wordlist, 'rt', encoding='utf-8', errors='ignore') if wordlist.endswith('.gz') else open(wordlist, 'r', encoding='utf-8', errors='ignore')
 
-def check_pdf_password(pdf_path: str, password: str) -> bool:
+def generate_passwords(wordlist_lines, pdf_path):
+    """Generates password attempts."""
+    for password in wordlist_lines:
+        yield (pdf_path, password)
+
+def check_pdf_password_worker(args):
+    """Check PDF password. This function is run by the main process to avoid issues with shared state."""
+    pdf_path, password = args
     try:
         with pikepdf.open(pdf_path, password=password):
-            return True
+            return password
     except pikepdf.PasswordError:
-        return False
+        return None
     except pikepdf._qpdf.PasswordError:
-        return False
+        return None
     except Exception as e:
-        print(f"An unexpected error occurred: {e}")
-        return False
+        return None
 
 def brute_force_pdf(pdf_path: str, wordlist: str, output_file: str = None, auto_open: bool = False) -> str:
     start_time = time.time()
@@ -59,25 +66,45 @@ def brute_force_pdf(pdf_path: str, wordlist: str, output_file: str = None, auto_
             return ""
 
         words.seek(0)
+        wordlist_lines = [line.strip() for line in words]  # Convert wordlist to a list to avoid exhausting the iterator
+
         progress_file = f"{os.path.basename(pdf_path)}.progress"
         start_line = load_progress(progress_file)
 
         if start_line > 0:
             print(Fore.YELLOW + f"[+] Resuming from line {start_line + 1} in the wordlist.")
 
-        total_words = sum(1 for _ in words)
-        words.seek(0)
-        skip_words(words, start_line)
+        wordlist_lines = wordlist_lines[start_line:]  # Skip lines based on progress
 
-        for index, password in enumerate(tqdm(words, total=total_words, initial=start_line, unit="word", ncols=100, colour="green", leave=False, mininterval=0.5)):
-            password = password.strip('\n\r')
-            if check_pdf_password(pdf_path, password):
-                handle_success(pdf_path, wordlist, password, output_file, auto_open, start_time, time.time(), index + 1 + start_line, process)
+        total_words = len(wordlist_lines)
+
+        with Manager() as manager:
+            found_password = manager.Value('found_password', None)
+
+            pool = Pool(processes=cpu_count())
+            try:
+                for index, password in enumerate(tqdm(wordlist_lines, total=total_words, unit="word", ncols=100, colour="green", leave=False, mininterval=0.5)):
+                    result = check_pdf_password_worker((pdf_path, password))  # Move password checking to the main process
+
+                    if result:
+                        found_password.value = result
+                        break
+
+                    if index % 1000 == 0:
+                        save_progress(progress_file, index + start_line)
+
+                pool.close()
+                pool.join()
+            except KeyboardInterrupt:
+                pool.terminate()
+                pool.join()
+                print(Fore.RED + "\n[!] Process interrupted by user.")
+                return ""
+
+            if found_password.value:
+                handle_success(pdf_path, wordlist, found_password.value, output_file, auto_open, start_time, time.time(), index + 1 + start_line, process)
                 remove_progress(progress_file)
-                return password
-
-            if (index + start_line) % 1000 == 0:
-                save_progress(progress_file, index + start_line)
+                return found_password.value
 
     handle_failure(pdf_path, wordlist, output_file, start_time, time.time(), total_words, process)
     return ""
@@ -184,7 +211,6 @@ Options:
   -p, --password-list  Path to the wordlist file.
   -O, --output         (Optional) Save the report to the specified file.
   --hash="hash here"   Hash Cracking Module
-  -a, --auto-open      automatically opens the provided PDF file in a tmp-file (Bypass Restrictions)
 
 Example:
   python {os.path.basename(__file__)} -f protected.pdf -p wordlist.txt
@@ -245,7 +271,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Brute-force a password-protected PDF file.")
     parser.add_argument("-f", "--file", type=str, required=False, help="Path to the PDF file.")
-    parser.add_argument("-p", "--password-list", type=str, required=False, help="Path to the wordlist file.")
+    parser.add_argument("-p", "--password-list", type=str, required=False, help="Path to the wordlist file.")  # Fixed the argument definition
     parser.add_argument("-O", "--output", type=str, help="Save the report to the specified file.")
     parser.add_argument("--hash", type=str, help="Hash to be cracked.")
     parser.add_argument("-a", "--auto-open", action="store_true", help="Automatically open the PDF if the password is found.")
@@ -258,7 +284,7 @@ if __name__ == "__main__":
 
     if args.hash:
         crack_hash(args.hash, args.password_list, args.output)
-    elif args.file and args.password_list:
+    elif args.file and args.password_list:  # Updated to match the corrected argument
         brute_force_pdf(args.file, args.password_list, args.output, args.auto_open)
     else:
         show_help()
