@@ -14,9 +14,6 @@ import pikepdf
 from tqdm import tqdm
 import argparse
 from colorama import Fore, Style, init
-import os
-import sys
-import time
 import psutil
 import subprocess
 import hashlib
