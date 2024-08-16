@@ -265,7 +265,8 @@ class Shad0wCrack:
         msg['To'] = self.notify_email
 
         try:
-            with smtplib.SMTP('smtp.example.com') as server:
+            with smtplib.SMTP('smtp.gmail.com', 587) as server:
+                server.starttls()
                 server.login(self.notify_email, self.email_password)
                 server.sendmail(self.notify_email, self.notify_email, msg.as_string())
             print(Fore.GREEN + "[+] Email notification sent successfully.")
@@ -300,8 +301,15 @@ class Shad0wCrack:
                             report_file.write(f"Password: {password}\n")
                             report_file.write(f"Hash Type: {hash_type}\n")
                             report_file.write(f"Time Taken: {time_taken:.2f} seconds\n")
+
+                    if self.notify_email:
+                        self.send_email_notification(True, password)
+                        
                     return password
 
+        if self.notify_email:
+            self.send_email_notification(False)
+            
         print(Fore.RED + "[!] Failed to crack the hash.")
         return ""
 
