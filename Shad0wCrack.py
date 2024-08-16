@@ -159,7 +159,7 @@ class Shad0wCrack:
             self.open_file(password)
 
         if self.notify_email:
-            self.send_email_notification(True, password)
+            self.send_email_notification(True, password, start_time, end_time, total_attempts)
 
     def handle_failure(self, start_time, end_time, total_attempts):
         report_content = self.generate_report(False, None, start_time, end_time, total_attempts)
@@ -254,12 +254,16 @@ class Shad0wCrack:
             report_file.write(report_content)
         print(Fore.CYAN + f"\n[+] Report saved to file: {self.output_file}")
 
-    def send_email_notification(self, success, password=None):
-        msg_body = f"The password {'was' if success else 'was not'} found."
-        if success:
-            msg_body += f" The password is: {password}"
+    def send_email_notification(self, success, password=None, start_time=None, end_time=None, total_attempts=None):
+        report_content = self.generate_report(
+            success=success, 
+            password=password, 
+            start_time=start_time, 
+            end_time=end_time, 
+            total_attempts=total_attempts  
+        )
 
-        msg = MIMEText(msg_body)
+        msg = MIMEText(report_content)
         msg['Subject'] = 'Shad0wCrack Task Completion'
         msg['From'] = self.notify_email
         msg['To'] = self.notify_email
@@ -280,37 +284,46 @@ class Shad0wCrack:
             return ""
 
         start_time = time.time()
+        total_attempts = 0
 
         with self.open_wordlist(self.wordlist) as words:
             for password in tqdm(words, unit="word", ncols=100, colour="green", leave=False, mininterval=0.5):
                 password = password.strip()
+                total_attempts += 1
                 hashed_password = getattr(hashlib, hash_type)(password.encode()).hexdigest()
                 if hashed_password == self.hash_str:
                     end_time = time.time()
                     time_taken = end_time - start_time
-                    sys.stdout.flush()
                     print(Fore.GREEN + Style.BRIGHT + f"\n[+] Hash cracked! Password: {password}")
                     print(Fore.CYAN + f"Hash: {self.hash_str}")
                     print(Fore.CYAN + f"Hash Type: {hash_type}")
                     print(Fore.CYAN + f"Password: {password}" + Style.RESET_ALL)
                     print(Fore.CYAN + f"Time Taken: {time_taken:.2f} seconds")
 
+                    report_content = self.generate_report(True, password, start_time, end_time, total_attempts)
+                    self.print_report(report_content)
+
                     if self.output_file:
                         with open(self.output_file, 'w') as report_file:
-                            report_file.write(f"Hash: {self.hash_str}\n")
-                            report_file.write(f"Password: {password}\n")
-                            report_file.write(f"Hash Type: {hash_type}\n")
-                            report_file.write(f"Time Taken: {time_taken:.2f} seconds\n")
+                            report_file.write(report_content)
 
                     if self.notify_email:
-                        self.send_email_notification(True, password)
+                        self.send_email_notification(True, password, start_time, end_time, total_attempts)
                         
                     return password
 
-        if self.notify_email:
-            self.send_email_notification(False)
-            
+        end_time = time.time()
+        report_content = self.generate_report(False, None, start_time, end_time, total_attempts)
         print(Fore.RED + "[!] Failed to crack the hash.")
+        self.print_report(report_content)
+
+        if self.output_file:
+            with open(self.output_file, 'w') as report_file:
+                report_file.write(report_content)
+
+        if self.notify_email:
+            self.send_email_notification(False, None, start_time, end_time, total_attempts)
+        
         return ""
 
     def determine_hash_type(self):
